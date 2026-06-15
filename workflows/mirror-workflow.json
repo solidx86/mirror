@@ -1,0 +1,994 @@
+{
+  "name": "Mirror MVP — Journal Session",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "f154dce7-c086-4b2b-b587-804b8e3448e3",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1008,
+        400
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Allowlist: only your chat ID may use this bot.\n// Edit ALLOWED_CHAT_ID below after you find your chat ID.\nconst ALLOWED_CHAT_ID = 0; // <-- PASTE YOUR CHAT ID HERE\n\nconst chatId = $input.first().json.message?.chat?.id;\nconst text = ($input.first().json.message?.text || '').trim();\n\nif (ALLOWED_CHAT_ID === 0) {\n  // Bootstrap mode: allow anything so you can discover your chat ID\n  return [{ json: { chat_id: chatId, text, command: text.startsWith('/') ? text.split(' ')[0] : '', bootstrap_mode: true } }];\n}\n\nif (chatId !== ALLOWED_CHAT_ID) {\n  return []; // silently drop\n}\n\nreturn [{ json: { chat_id: chatId, text, command: text.startsWith('/') ? text.split(' ')[0] : '', bootstrap_mode: false } }];"
+      },
+      "id": "e08053a0-0711-4494-9015-cd502819c89c",
+      "name": "Authz + Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.state AS state, s.entry_id AS entry_id, e.raw_transcript AS raw_transcript, e.turn_count AS turn_count\nFROM (SELECT {{ $json.chat_id }}::bigint AS cid) c\nLEFT JOIN sessions s ON s.telegram_chat_id = c.cid\nLEFT JOIN entries e ON e.id = s.entry_id;",
+        "options": {}
+      },
+      "id": "4029b4d5-ae94-40da-ab20-e69c8de99ed0",
+      "name": "Get Session",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -608,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge incoming message + session into a single workflow context object.\nconst incoming = $('Authz + Parse').first().json;\nconst session = $input.first().json;\n\nconst state = session?.state || 'idle';\nconst entry_id = session?.entry_id || null;\nconst raw_transcript = session?.raw_transcript || '';\nconst turn_count = session?.turn_count || 0;\n\n// Decide route\nlet route;\nif (incoming.command === '/start') route = 'start';\nelse if (incoming.command === '/journal') route = 'open_entry';\nelse if (incoming.command === '/cancel') route = 'cancel';\nelse if (state === 'awaiting_intake') route = 'append_intake';\nelse route = 'idle_fallback';\n\nreturn [{\n  json: {\n    chat_id: incoming.chat_id,\n    text: incoming.text,\n    command: incoming.command,\n    state,\n    entry_id,\n    raw_transcript,\n    turn_count,\n    route\n  }\n}];"
+      },
+      "id": "3b1f1f6f-9312-4ceb-8570-aabe895ff680",
+      "name": "Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1e7b24cc-fdde-4288-a72c-6d411b267b8b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "start"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "open_entry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "0e9745ad-891e-402f-8d4f-add0700a1d95"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "open_entry"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "cancel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ca82602a-1ccf-4f02-90e6-7065aa9cd98b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cancel"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "append_intake",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "9fdb7642-3388-46ae-99c9-a563f3ffacf5"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "append_intake"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "idle_fallback",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "75ce4411-66b0-4930-ade0-db328acc0bad"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "idle_fallback"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3e70f4aa-eb5e-4028-b112-ad51829bb57e",
+      "name": "Switch on Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -208,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "Mirror is online.\n\nSend /journal when you want to start an entry.\nSend /cancel mid-entry to abandon it.",
+        "additionalFields": {}
+      },
+      "id": "5c4d81ec-5d2e-4c50-839b-5b172c619a07",
+      "name": "TG: /start reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH new_entry AS (\n  INSERT INTO entries (telegram_chat_id, raw_transcript, turn_count)\n  VALUES ({{ $json.chat_id }}::bigint, '', 0)\n  RETURNING id\n)\nINSERT INTO sessions (telegram_chat_id, entry_id, state, updated_at)\nVALUES ({{ $json.chat_id }}::bigint, (SELECT id FROM new_entry), 'awaiting_intake', NOW())\nON CONFLICT (telegram_chat_id) DO UPDATE\n  SET entry_id = (SELECT id FROM new_entry),\n      state = 'awaiting_intake',\n      updated_at = NOW();\nSELECT id AS entry_id FROM entries WHERE telegram_chat_id = {{ $json.chat_id }}::bigint ORDER BY id DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "d200fd60-2df1-4685-9958-2a049470bc37",
+      "name": "Open Entry",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Route').first().json.chat_id }}",
+        "text": "Right. What's on your mind today?\n\nYou can hit any of the 5 areas — wins, what went wrong, stress, trading, consulting — or just talk and I'll guide. Skipping any is fine.",
+        "additionalFields": {}
+      },
+      "id": "4cc55afb-db25-4a0c-bd0e-887a95234ef9",
+      "name": "TG: opening prompt",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        208
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE entries SET status = 'cancelled' WHERE id = {{ $json.entry_id }};\nUPDATE sessions SET state = 'idle', entry_id = NULL, updated_at = NOW() WHERE telegram_chat_id = {{ $json.chat_id }}::bigint;",
+        "options": {}
+      },
+      "id": "c9911ce5-191a-400b-acb6-4f4636c15070",
+      "name": "Cancel Entry",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Route').first().json.chat_id }}",
+        "text": "Cancelled. Nothing saved. Send /journal when ready.",
+        "additionalFields": {}
+      },
+      "id": "0e82e11f-4b39-4094-a84f-907e57f71995",
+      "name": "TG: cancel reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        400
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "No active entry. Send /journal to start one.",
+        "additionalFields": {}
+      },
+      "id": "574b93f9-edd3-4c53-90ca-8754e62170cc",
+      "name": "TG: idle reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        800
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE entries\nSET raw_transcript = raw_transcript || CASE WHEN raw_transcript = '' THEN '' ELSE chr(10) END || 'USER: ' || '{{ $json.text.replace(/'/g, \"''\") }}',\n    turn_count = turn_count + 1\nWHERE id = {{ $json.entry_id }};\nSELECT raw_transcript, turn_count FROM entries WHERE id = {{ $json.entry_id }};",
+        "options": {}
+      },
+      "id": "86867b36-1772-4149-83d1-2b9a5e81d027",
+      "name": "Append User Turn",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read intake prompt file from the read-only mounted volume.\nconst fs = require('fs');\nconst tpl = fs.readFileSync('/files/prompts/intake_v1.md', 'utf8');\nconst global_ = fs.readFileSync('/files/prompts/_global_v1.md', 'utf8');\nconst systemPrompt = tpl.replace('{{_global}}', global_);\n\n// Pull transcript and route context from earlier nodes.\nconst routeJson = $('Route').first().json;\nconst appendJson = $input.first().json;\n\nreturn [{\n  json: {\n    chat_id: routeJson.chat_id,\n    entry_id: routeJson.entry_id,\n    transcript: appendJson.raw_transcript,\n    turn_count: appendJson.turn_count,\n    system_prompt: systemPrompt\n  }\n}];"
+      },
+      "id": "aa6ce089-affb-4ffc-8ebb-ca0503fc903f",
+      "name": "Load Intake Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-haiku-4-5\",\n  \"max_tokens\": 600,\n  \"system\": {{ JSON.stringify($json.system_prompt) }},\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify('Conversation transcript so far:\\n\\n' + $json.transcript + '\\n\\nWhat is your next message? Remember: one question at a time, or end with READY_FOR_REFLECTION on its own line if you have enough.') }}\n    }\n  ]\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "205d14a8-e066-4e4b-a7a5-521600b3fa76",
+      "name": "Intake Agent (Haiku)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        608
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Anthropic response, decide if intake is complete, persist assistant turn.\nconst resp = $input.first().json;\nconst assistantText = resp.content?.[0]?.text || '';\nconst inputTokens = resp.usage?.input_tokens || 0;\nconst outputTokens = resp.usage?.output_tokens || 0;\n\nconst sentinel = 'READY_FOR_REFLECTION';\nconst isReady = assistantText.includes(sentinel);\nconst userFacing = assistantText.replace(sentinel, '').trim();\n\nconst routeJson = $('Route').first().json;\nconst loadJson = $('Load Intake Prompt').first().json;\n\nreturn [{\n  json: {\n    chat_id: routeJson.chat_id,\n    entry_id: routeJson.entry_id,\n    transcript: loadJson.transcript,\n    assistant_message_full: assistantText,\n    assistant_message_user_facing: userFacing,\n    is_ready: isReady,\n    input_tokens: inputTokens,\n    output_tokens: outputTokens\n  }\n}];"
+      },
+      "id": "0e390efe-94aa-4d17-9476-5b2e7aa40c32",
+      "name": "Parse Intake Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE entries\nSET raw_transcript = raw_transcript || chr(10) || 'ASSISTANT: ' || '{{ $json.safe_assistant_text }}'\nWHERE id = {{ $json.entry_id }};\n\nINSERT INTO llm_calls (agent, model, input_tokens, output_tokens)\nVALUES (\n  'intake',\n  'claude-haiku-4-5',\n  {{ $json.input_tokens }},\n  {{ $json.output_tokens }}\n);\n\nSELECT raw_transcript FROM entries WHERE id = {{ $json.entry_id }};",
+        "options": {}
+      },
+      "id": "53ebaeb6-8635-41c3-9480-71347d580764",
+      "name": "Append Assistant Turn",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1008,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Parse Intake Response').first().json.is_ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "be1c6266-ca12-49b0-be8d-a59a0b157e25",
+      "name": "Ready for Reflection?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Intake Response').first().json.chat_id }}",
+        "text": "={{ $('Parse Intake Response').first().json.assistant_message_user_facing }}",
+        "additionalFields": {}
+      },
+      "id": "e1f66acd-a804-4302-ab4b-2dfc6376b4e5",
+      "name": "TG: send question",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1408,
+        512
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Intake Response').first().json.chat_id }}",
+        "text": "={{ $('Parse Intake Response').first().json.assistant_message_user_facing || 'Got it. Reflecting now.' }}\n\n_Reflecting…_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "3f9886e2-91a4-4a2a-9cf3-9e803baf4e4f",
+      "name": "TG: reflecting notice",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1408,
+        704
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE sessions SET state = 'reflecting', updated_at = NOW()\nWHERE telegram_chat_id = {{ $('Parse Intake Response').first().json.chat_id }}::bigint;",
+        "options": {}
+      },
+      "id": "d12d4d4c-92d2-4568-9dd9-9bf3078973d9",
+      "name": "Mark Reflecting",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1616,
+        704
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Load stress reflection prompt.\nconst fs = require('fs');\nconst tpl = fs.readFileSync('/files/prompts/reflect_stress_v1.md', 'utf8');\nconst global_ = fs.readFileSync('/files/prompts/_global_v1.md', 'utf8');\nconst systemPrompt = tpl.replace('{{_global}}', global_);\n\nconst parseJson = $('Parse Intake Response').first().json;\n\nreturn [{\n  json: {\n    chat_id: parseJson.chat_id,\n    entry_id: parseJson.entry_id,\n    transcript: parseJson.transcript,\n    system_prompt: systemPrompt\n  }\n}];"
+      },
+      "id": "0b781ed0-ceb3-48b1-b17e-fc89da069b42",
+      "name": "Load Reflect Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 1500,\n  \"system\": {{ JSON.stringify($json.system_prompt) }},\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify('Full intake transcript:\\n\\n' + $json.transcript + '\\n\\nProduce the JSON object now. JSON only, no prose, no code fences.') }}\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "7d9ae504-c307-4087-95e6-62c56640c0bf",
+      "name": "Stress Reflection (Sonnet)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2016,
+        704
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse + validate the reflection JSON. If invalid, store raw and surface a graceful fallback.\nconst resp = $input.first().json;\nlet text = resp.content?.[0]?.text || '';\nconst inputTokens = resp.usage?.input_tokens || 0;\nconst outputTokens = resp.usage?.output_tokens || 0;\n\n// Defensive: strip code fences if Sonnet ever ignores instructions\ntext = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();\n\nlet parsed = null;\nlet parseError = null;\ntry {\n  parsed = JSON.parse(text);\n} catch (e) {\n  parseError = e.message;\n}\n\nconst loadJson = $('Load Reflect Prompt').first().json;\n\n// Build the user-facing message (Markdown for Telegram)\nlet userMsg;\nif (parsed && parsed.stress_present === false) {\n  userMsg = `*Reflection — ${new Date().toISOString().slice(0,10)}*\\n\\nNo significant stress today. Logged.\\n\\n_${parsed.one_observation || 'Steady day.'}_`;\n} else if (parsed && parsed.rumination_flag) {\n  userMsg = `*Reflection — ${new Date().toISOString().slice(0,10)}*\\n\\n⚠️ Recurring theme detected. Not re-analysing tonight.\\n\\n_${parsed.one_question}_`;\n} else if (parsed && parsed.thought_record) {\n  const tr = parsed.thought_record;\n  const distortions = (tr.cognitive_distortions || []).join(', ') || 'none flagged';\n  userMsg = `*Reflection — ${new Date().toISOString().slice(0,10)}*\\n\\n` +\n    `*Stress level:* ${parsed.stress_level ?? 'n/a'}/10\\n` +\n    `*Situation:* ${tr.situation}\\n` +\n    `*Automatic thought:* \"${tr.automatic_thought}\"\\n` +\n    `*Emotion:* ${tr.emotion} (${tr.emotion_intensity}/10)\\n` +\n    `*Distortions:* ${distortions}\\n` +\n    `*Evidence for:* ${tr.evidence_for}\\n` +\n    `*Evidence against:* ${tr.evidence_against}\\n` +\n    `*Balanced thought:* ${tr.balanced_thought}\\n` +\n    `*Projected emotion intensity:* ${tr.projected_emotion_intensity}/10\\n` +\n    `*Controllability:* ${parsed.controllability || 'n/a'}\\n\\n` +\n    `*Observation:* ${parsed.one_observation}\\n` +\n    `*To sit with:* _${parsed.one_question}_`;\n} else {\n  userMsg = `*Reflection saved.*\\n\\n(I had trouble producing a structured thought record — the raw transcript is preserved in your archive.)`;\n}\n\nreturn [{\n  json: {\n    chat_id: loadJson.chat_id,\n    entry_id: loadJson.entry_id,\n    transcript: loadJson.transcript,\n    parsed,\n    parse_error: parseError,\n    raw_output: text,\n    user_message: userMsg,\n    input_tokens: inputTokens,\n    output_tokens: outputTokens\n  }\n}];"
+      },
+      "id": "0f01334d-893b-4004-8491-fef16ee8c29e",
+      "name": "Parse Reflection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reflections (entry_id, agent, prompt_version, model, output_json, input_tokens, output_tokens)\nVALUES (\n  {{ $json.entry_id }},\n  'stress_root_cause',\n  'v1',\n  'claude-sonnet-4-6',\n  '{{ $json.safe_raw_output }}',\n  {{ $json.input_tokens }},\n  {{ $json.output_tokens }}\n);\n\nINSERT INTO llm_calls (agent, model, input_tokens, output_tokens)\nVALUES (\n  'stress_root_cause',\n  'claude-sonnet-4-6',\n  {{ $json.input_tokens }},\n  {{ $json.output_tokens }}\n);\n\nUPDATE entries\nSET status = 'concluded', concluded_at = NOW()\nWHERE id = {{ $json.entry_id }};\n\nUPDATE sessions\nSET state = 'idle', entry_id = NULL, updated_at = NOW()\nWHERE telegram_chat_id = {{ $json.chat_id }}::bigint;",
+        "options": {}
+      },
+      "id": "bab8d304-51df-4f9c-9564-12d4cabd5917",
+      "name": "Persist Reflection",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2624,
+        704
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Write a human-readable Markdown export to /files/archive/YYYY/MM/DD-<id>.md\nconst fs = require('fs');\nconst path = require('path');\n\nconst pj = $('Parse Reflection').first().json;\nconst now = new Date();\nconst yyyy = now.getFullYear();\nconst mm = String(now.getMonth() + 1).padStart(2, '0');\nconst dd = String(now.getDate()).padStart(2, '0');\nconst dir = `/files/archive/${yyyy}/${mm}`;\nfs.mkdirSync(dir, { recursive: true });\nconst file = `${dir}/${dd}-entry-${pj.entry_id}.md`;\n\nconst tr = pj.parsed?.thought_record;\nconst distortions = (tr?.cognitive_distortions || []).join(', ') || 'none flagged';\n\nconst md = [\n  `# Journal — ${yyyy}-${mm}-${dd} (entry #${pj.entry_id})`,\n  '',\n  '## Transcript',\n  '',\n  '```',\n  pj.transcript || '',\n  '```',\n  '',\n  '## Stress Reflection',\n  '',\n  pj.parsed ? (\n    pj.parsed.stress_present === false\n      ? `_No significant stress today._\\n\\n**Observation:** ${pj.parsed.one_observation}\\n\\n**To sit with:** ${pj.parsed.one_question}`\n      : pj.parsed.rumination_flag\n        ? `**⚠ Rumination flagged.** Theme is recurring; tonight's entry is not being re-analysed.\\n\\n**To sit with:** ${pj.parsed.one_question}`\n        : tr ? [\n            `**Stress level:** ${pj.parsed.stress_level ?? 'n/a'}/10`,\n            `**Situation:** ${tr.situation}`,\n            `**Automatic thought:** \"${tr.automatic_thought}\"`,\n            `**Emotion:** ${tr.emotion} (${tr.emotion_intensity}/10)`,\n            `**Distortions:** ${distortions}`,\n            `**Evidence for:** ${tr.evidence_for}`,\n            `**Evidence against:** ${tr.evidence_against}`,\n            `**Balanced thought:** ${tr.balanced_thought}`,\n            `**Projected emotion intensity:** ${tr.projected_emotion_intensity}/10`,\n            `**Controllability:** ${pj.parsed.controllability || 'n/a'}`,\n            '',\n            `**Observation:** ${pj.parsed.one_observation}`,\n            `**To sit with:** ${pj.parsed.one_question}`,\n          ].join('\\n') : '_(no thought record produced)_'\n  ) : `_Reflection failed to parse. Raw output preserved in DB._\\n\\nParse error: ${pj.parse_error}`,\n  '',\n  '---',\n  `_Generated by Mirror at ${now.toISOString()}_`\n].join('\\n');\n\nfs.writeFileSync(file, md, 'utf8');\n\nreturn [{ json: { ...pj, archive_path: file } }];"
+      },
+      "id": "3e17e6ad-8b1b-405f-ad25-41c23eeecba9",
+      "name": "Export Markdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2816,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.user_message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "157d526f-4edc-483a-a49e-f17d824b45eb",
+      "name": "TG: send reflection",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3024,
+        704
+      ],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Parse Intake Response').first().json;\n\nconst safeText = (data.assistant_message_full || '').split(\"'\").join(\"''\");\n\nreturn [{\n  json: {\n    chat_id: data.chat_id,\n    entry_id: data.entry_id,\n    transcript: data.transcript,\n    input_tokens: data.input_tokens,\n    output_tokens: data.output_tokens,\n    is_ready: data.is_ready,\n    safe_assistant_text: safeText\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        608
+      ],
+      "id": "33d75fcc-92f5-4ee3-a9f0-948f3abbd3db",
+      "name": "Escape Assistant Text"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Parse Reflection').first().json;\n\nconst safeOutput = (data.raw_output || '').split(\"'\").join(\"''\");\n\nreturn [{\n  json: {\n    chat_id: data.chat_id,\n    entry_id: data.entry_id,\n    input_tokens: data.input_tokens,\n    output_tokens: data.output_tokens,\n    parsed: data.parsed,\n    parse_error: data.parse_error,\n    user_message: data.user_message,\n    safe_raw_output: safeOutput\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        704
+      ],
+      "id": "6474e87f-1034-43d2-833e-3fe747bb7e29",
+      "name": "Escape Reflection Text"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Authz + Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authz + Parse": {
+      "main": [
+        [
+          {
+            "node": "Get Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Session": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Switch on Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch on Route": {
+      "main": [
+        [
+          {
+            "node": "TG: /start reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Open Entry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cancel Entry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append User Turn",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TG: idle reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open Entry": {
+      "main": [
+        [
+          {
+            "node": "TG: opening prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Entry": {
+      "main": [
+        [
+          {
+            "node": "TG: cancel reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append User Turn": {
+      "main": [
+        [
+          {
+            "node": "Load Intake Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Intake Prompt": {
+      "main": [
+        [
+          {
+            "node": "Intake Agent (Haiku)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intake Agent (Haiku)": {
+      "main": [
+        [
+          {
+            "node": "Parse Intake Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Intake Response": {
+      "main": [
+        [
+          {
+            "node": "Escape Assistant Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Assistant Turn": {
+      "main": [
+        [
+          {
+            "node": "Ready for Reflection?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready for Reflection?": {
+      "main": [
+        [
+          {
+            "node": "TG: reflecting notice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TG: send question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TG: reflecting notice": {
+      "main": [
+        [
+          {
+            "node": "Mark Reflecting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Reflecting": {
+      "main": [
+        [
+          {
+            "node": "Load Reflect Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Reflect Prompt": {
+      "main": [
+        [
+          {
+            "node": "Stress Reflection (Sonnet)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stress Reflection (Sonnet)": {
+      "main": [
+        [
+          {
+            "node": "Parse Reflection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Reflection": {
+      "main": [
+        [
+          {
+            "node": "Escape Reflection Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Reflection": {
+      "main": [
+        [
+          {
+            "node": "Export Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Export Markdown": {
+      "main": [
+        [
+          {
+            "node": "TG: send reflection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escape Assistant Text": {
+      "main": [
+        [
+          {
+            "node": "Append Assistant Turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escape Reflection Text": {
+      "main": [
+        [
+          {
+            "node": "Persist Reflection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e4c0ae35-2a44-49e6-a6b8-63ae59a709a1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": ""
+  },
+  "id": "kJoAfVE0yMdf7M8A",
+  "tags": []
+}

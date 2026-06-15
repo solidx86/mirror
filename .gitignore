@@ -1,0 +1,23 @@
+# Credentials
+.env
+
+# Database — all of it
+data/
+
+# n8n internal state
+n8n-data/
+
+# Journal content — personal data, lives in a separate private repo (nested git repo)
+archive/
+backups/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/

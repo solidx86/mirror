@@ -1,0 +1,20 @@
+{
+  "_comment": "SYNTHETIC golden fixture — the reflection agent's expected output shape for examples/sample-entry.md. Validated by tests/test_reflection_schema.py.",
+  "stress_present": true,
+  "stress_level": 6,
+  "thought_record": {
+    "situation": "Overrode own risk rule (half size after two losses) on a valid setup; the trade failed and erased most of the week's gains.",
+    "automatic_thought": "I need to make back the losses before the close.",
+    "emotion": "Frustration / self-directed anger",
+    "emotion_intensity": 6,
+    "cognitive_distortions": ["emotional_reasoning", "all_or_nothing"],
+    "evidence_for": "The loss was real and the size made it larger than it needed to be.",
+    "evidence_against": "The setup itself was valid; the rule that would have contained the damage already exists and has worked before.",
+    "balanced_thought": "The system did its job — it flagged the exact moment of risk. The work is following it when it matters most.",
+    "projected_emotion_intensity": 3
+  },
+  "controllability": "controllable",
+  "rumination_flag": false,
+  "one_observation": "The override happened at the intersection of drawdown and time pressure — same conditions as the rule was written for.",
+  "one_question": "What would have to be true for 'make it back today' to stop feeling urgent?"
+}

@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mirror-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mirror
+      POSTGRES_USER: mirror
+      # Static password is deliberate: the port binds to 127.0.0.1 only and the
+      # host is a single-user machine. Nothing here is reachable off-box.
+      POSTGRES_PASSWORD: mirrorlocal
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./scripts/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: mirror-n8n
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      # Telegram Trigger is webhook-based and needs a public HTTPS URL. To run
+      # it for real, expose n8n via a Cloudflare Tunnel and override the three
+      # vars below with the tunnel hostname so n8n registers the right webhook
+      # with Telegram. See docs/SETUP.md.
+      #   N8N_HOST=mirror.example.com
+      #   N8N_PROTOCOL=https
+      #   WEBHOOK_URL=https://mirror.example.com/
+      - GENERIC_TIMEZONE=Asia/Kuala_Lumpur
+      - TZ=Asia/Kuala_Lumpur
+      - N8N_SECURE_COOKIE=false
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - NODE_FUNCTION_ALLOW_BUILTIN=fs,path,crypto
+    volumes:
+      - ./n8n-data:/home/node/.n8n
+      - ./archive:/files/archive
+      - ./data:/files/data
+      - ./prompts:/files/prompts:ro
